@@ -269,8 +269,23 @@
     }
 
     async function handleIntent(text) {
-      // 1. Weather & Rain Intent
-      if (text.includes('weather') || text.includes('temperature') || text.includes('rain')) {
+      const clean = text.replace(/[?.,!]/g, '').trim();
+
+      // 1. Casual Greetings & Acknowledgments
+      if (/^(hey|hi|hello|what'?s up|yo|greetings|howdy|sup)\b/i.test(clean)) {
+        const greetings = [
+          "Hey! What's up?",
+          "Hello! How can I help you today?",
+          "Yo! What are we checking out?",
+          "Hey there! Ready when you are."
+        ];
+        const pick = greetings[Math.floor(Math.random() * greetings.length)];
+        speak(pick);
+        return;
+      }
+
+      // 2. Weather & Rain Intent
+      if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain')) {
         speak("Checking current skies...");
         try {
           const lat = 28.5383;
@@ -284,7 +299,7 @@
           const condition = getWeatherDescription(code);
           const prob = (data.hourly && data.hourly.precipitation_probability) ? data.hourly.precipitation_probability[0] : 0;
 
-          if (text.includes('rain')) {
+          if (clean.includes('rain')) {
             if (precip > 0 || (code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
               speak(`Yes, it is currently raining with ${precip} millimeters of precipitation.`);
             } else if (prob > 30) {
@@ -301,22 +316,22 @@
         return;
       }
 
-      // 2. Current Time
-      if (text.includes('what time is it') || text === 'time') {
+      // 3. Current Time
+      if (clean.includes('what time is it') || clean === 'time') {
         const now = new Date();
         speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
         return;
       }
 
-      // 3. Current Date
-      if (text.includes('what is the date') || text.includes('what day is it')) {
+      // 4. Current Date
+      if (clean.includes('what is the date') || clean.includes('what day is it') || clean === 'date') {
         const now = new Date();
         speak(`Today is ${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.`);
         return;
       }
 
-      // 4. Random Joke
-      if (text.includes('joke')) {
+      // 5. Random Joke
+      if (clean.includes('joke')) {
         try {
           const res = await fetch('https://official-joke-api.appspot.com/random_joke');
           const data = await res.json();
@@ -327,8 +342,8 @@
         return;
       }
 
-      // 5. Random Advice
-      if (text.includes('give me advice') || text.includes('quote')) {
+      // 6. Random Advice
+      if (clean.includes('give me advice') || clean.includes('quote') || clean === 'advice') {
         try {
           const res = await fetch('https://api.adviceslip.com/advice');
           const data = await res.json();
@@ -339,21 +354,21 @@
         return;
       }
 
-      // 6. Coin Toss
-      if (text.includes('flip a coin') || text.includes('coin toss')) {
+      // 7. Coin Toss
+      if (clean.includes('flip a coin') || clean.includes('coin toss')) {
         const flip = Math.random() > 0.5 ? "Heads" : "Tails";
         speak(`It landed on ${flip}.`);
         return;
       }
 
-      // 7. Identity check
-      if (text.includes('who are you') || text.includes('what is your name')) {
+      // 8. Identity check
+      if (clean.includes('who are you') || clean.includes('what is your name')) {
         speak("I am Nova, your client-side assistant. Zero cloud fees, zero Apple lawsuits 💀.");
         return;
       }
 
       // Fallback: Query Wikipedia
-      await searchWikipedia(text);
+      await searchWikipedia(clean);
     }
   </script>
 </body>
