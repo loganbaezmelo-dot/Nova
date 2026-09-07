@@ -33,6 +33,9 @@
       box-shadow: 0 0 60px rgba(236, 72, 153, 0.9);
       animation: pulse 1.5s infinite alternate;
     }
+    .orb.speaking {
+      box-shadow: 0 0 50px rgba(59, 130, 246, 0.8);
+    }
     @keyframes pulse {
       from { transform: scale(1.1); }
       to { transform: scale(1.22); }
@@ -55,8 +58,8 @@
 </head>
 <body>
 
-  <div class="orb" id="mic-btn" title="Click to speak"></div>
-  <div id="status">Tap the orb to speak. Ask about weather, jokes, or any topic on Wikipedia.</div>
+  <div class="orb" id="mic-btn" title="Click to speak or cancel"></div>
+  <div id="status">Tap the orb to speak. Tap anytime while it's talking to stop it.</div>
   <div id="response"></div>
 
   <script>
@@ -66,6 +69,7 @@
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
+    let isListening = false;
 
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
@@ -73,16 +77,19 @@
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
+        isListening = true;
         orb.classList.add('listening');
         statusText.innerText = "Nova is listening...";
         responseText.innerText = "";
       };
 
       recognition.onend = () => {
+        isListening = false;
         orb.classList.remove('listening');
       };
 
       recognition.onerror = (e) => {
+        isListening = false;
         orb.classList.remove('listening');
         statusText.innerText = `Error: ${e.error}`;
       };
@@ -96,20 +103,50 @@
       statusText.innerText = "Web Speech API not supported in this browser 😭. Try Chrome or Edge.";
     }
 
+    // Orb Click Handler: Stops speech if talking, cancels recognition if listening, or starts listening
     orb.addEventListener('click', () => {
-      if (!recognition) return;
-      try {
-        recognition.start();
-      } catch (err) {
+      // 1. If it is talking, shut it down immediately
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        orb.classList.remove('speaking');
+        statusText.innerText = "Stopped speaking.";
+        return;
+      }
+
+      // 2. If it is already listening, stop listening
+      if (isListening && recognition) {
         recognition.stop();
+        return;
+      }
+
+      // 3. Otherwise, begin listening
+      if (recognition) {
+        try {
+          recognition.start();
+        } catch (err) {
+          recognition.stop();
+        }
       }
     });
 
     function speak(text) {
-      window.speechSynthesis.cancel();
+      window.speechSynthesis.cancel(); // Clear any previous queued speech
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
+
+      utterance.onstart = () => {
+        orb.classList.add('speaking');
+      };
+
+      utterance.onend = () => {
+        orb.classList.remove('speaking');
+      };
+
+      utterance.onerror = () => {
+        orb.classList.remove('speaking');
+      };
+
       window.speechSynthesis.speak(utterance);
       responseText.innerText = text;
     }
@@ -140,7 +177,6 @@
     }
 
     async function searchWikipedia(query) {
-      // Strip out question prefixes, contractions, and articles like "a/an/the"
       let cleanTerm = query
         .replace(/^(what'?s|what is|who'?s|who was|who is|tell me about|explain|define|search for)\s+(a\s+|an\s+|the\s+)?/i, '')
         .replace(/[?.,!]/g, '')
@@ -154,7 +190,6 @@
       speak(`Looking up ${cleanTerm}...`);
 
       try {
-        // Step 1: Use Wikipedia search engine (generator=search) instead of opensearch for much better matching
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(cleanTerm)}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exsentences=2&format=json&origin=*`;
         const res = await fetch(searchUrl);
         const data = await res.json();
