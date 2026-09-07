@@ -57,12 +57,14 @@
       pointer-events: none;
     }
 
+    /* Listening state: faster color whirl & breathing scale */
     .orb.listening {
       animation: rotateGradient 2s linear infinite, pulseGlow 1.2s ease-in-out infinite alternate;
       box-shadow: 0 0 70px rgba(236, 72, 153, 0.85);
       filter: contrast(1.15) brightness(1.1);
     }
 
+    /* Speaking state: rapid morphing glow */
     .orb.speaking {
       animation: rotateGradient 1.5s linear infinite, speakMorph 0.8s ease-in-out infinite alternate;
       box-shadow: 0 0 75px rgba(59, 130, 246, 0.9);
@@ -115,7 +117,7 @@
 <body>
 
   <div class="orb" id="mic-btn" title="Click to speak or cancel"></div>
-  <div id="status">Tap the orb to speak. Tap anytime while it's talking to stop it.</div>
+  <div id="status">Tap the orb to speak. Ask about past, current, or future weather.</div>
   <div id="response"></div>
 
   <script>
@@ -228,6 +230,51 @@
       return descriptions[code] || "fair conditions";
     }
 
+    // Converts words ("two", "three") to digits
+    function textToNumber(val) {
+      const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+      return words[val] || parseInt(val, 10);
+    }
+
+    function parseRequestedDateOffsets(text) {
+      const offsets = [];
+
+      // Matches: "3 days ago", "two days ago"
+      const pastRegex = /(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?\s+ago/gi;
+      let match;
+      while ((match = pastRegex.exec(text)) !== null) {
+        const num = textToNumber(match[1]);
+        if (!isNaN(num)) offsets.push({ offset: -num, label: `${num} days ago` });
+      }
+
+      // Yesterday
+      if (/\byesterday\b/i.test(text) && !offsets.some(o => o.offset === -1)) {
+        offsets.push({ offset: -1, label: "Yesterday" });
+      }
+
+      // Matches: "in 3 days", "in two days"
+      const futureRegex = /in\s+(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?/gi;
+      while ((match = futureRegex.exec(text)) !== null) {
+        const num = textToNumber(match[1]);
+        if (!isNaN(num)) offsets.push({ offset: num, label: `in ${num} days` });
+      }
+
+      // Tomorrow
+      if (/\btomorrow\b/i.test(text) && !offsets.some(o => o.offset === 1)) {
+        offsets.push({ offset: 1, label: "Tomorrow" });
+      }
+
+      // Today / Right now
+      if (/\btoday\b/i.test(text) || /\bnow\b/i.test(text) || offsets.length === 0) {
+        if (!offsets.some(o => o.offset === 0)) {
+          offsets.push({ offset: 0, label: "Today" });
+        }
+      }
+
+      // Sort chronological: oldest to newest
+      return offsets.sort((a, b) => a.offset - b.offset);
+    }
+
     async function searchWikipedia(query) {
       let cleanTerm = query
         .replace(/^(what'?s|what is|who'?s|who was|who is|tell me about|explain|define|search for)\s+(a\s+|an\s+|the\s+)?/i, '')
@@ -267,7 +314,7 @@
 
       // 1. Capabilities
       if (/^(what can you do|help|what are your features|commands|what do you do)\b/i.test(clean)) {
-        speak("I can check live and upcoming weather, tell you the time and date, drop jokes, flip coins, or look up anything on Wikipedia 💀.");
+        speak("I can check live, past, and future weather records, tell time, drop jokes, flip coins, or query Wikipedia 💀.");
         return;
       }
 
@@ -284,66 +331,61 @@
         return;
       }
 
-      // 3. Smart Multi-Time Weather & Rain Intent
+      // 3. Multi-Day & Historical Weather Intent
       if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain') || clean.includes('forecast')) {
-        speak("Checking forecast records...");
+        speak("Accessing weather timeline records...");
         try {
           const lat = 28.5383;
           const lon = -81.3792;
-          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&hourly=precipitation_probability&temperature_unit=fahrenheit&timezone=auto`;
+          // past_days=14 and forecast_days=16 covers past 2 weeks up to 16 days in the future
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&past_days=14&forecast_days=16&temperature_unit=fahrenheit&timezone=auto`;
+          
           const res = await fetch(url);
           const data = await res.json();
 
-          const wantsTomorrow = clean.includes('tomorrow');
-          const wantsToday = clean.includes('today') || (!wantsTomorrow);
+          const targetOffsets = parseRequestedDateOffsets(clean);
+          const timeArray = data.daily.time;
+          
+          // Index of today in the timeline array is exactly past_days (14)
+          const todayIndex = 14; 
+          const reports = [];
 
-          // Today details
-          const currentTemp = Math.round(data.current.temperature_2m);
-          const currentCondition = getWeatherDescription(data.current.weather_code);
-          const todayMax = Math.round(data.daily.temperature_2m_max[0]);
-          const todayMin = Math.round(data.daily.temperature_2m_min[0]);
-          const todayPrecipChance = data.daily.precipitation_probability_max[0];
-          const todayCondition = getWeatherDescription(data.daily.weather_code[0]);
+          targetOffsets.forEach(req => {
+            const index = todayIndex + req.offset;
+            if (index >= 0 && index < timeArray.length) {
+              const maxT = Math.round(data.daily.temperature_2m_max[index]);
+              const minT = Math.round(data.daily.temperature_2m_min[index]);
+              const cond = getWeatherDescription(data.daily.weather_code[index]);
+              const rainSum = data.daily.precipitation_sum[index];
+              const rainProb = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[index] : null;
 
-          // Tomorrow details
-          const tomorrowMax = Math.round(data.daily.temperature_2m_max[1]);
-          const tomorrowMin = Math.round(data.daily.temperature_2m_min[1]);
-          const tomorrowCondition = getWeatherDescription(data.daily.weather_code[1]);
-          const tomorrowPrecipChance = data.daily.precipitation_probability_max[1];
-
-          // If asking specifically about rain
-          if (clean.includes('rain')) {
-            if (wantsToday && wantsTomorrow) {
-              speak(`Today has a ${todayPrecipChance}% chance of rain. Tomorrow has a ${tomorrowPrecipChance}% chance of rain.`);
-            } else if (wantsTomorrow) {
-              speak(`Tomorrow will have a ${tomorrowPrecipChance}% chance of rain with ${tomorrowCondition}.`);
-            } else {
-              const precipNow = data.current.precipitation;
-              if (precipNow > 0) {
-                speak(`It is currently raining at ${precipNow} millimeters.`);
+              if (clean.includes('rain')) {
+                if (req.offset < 0) {
+                  reports.push(`${req.label}: had ${rainSum} millimeters of precipitation.`);
+                } else if (req.offset === 0) {
+                  const precipNow = data.current.precipitation;
+                  reports.push(`Today: currently ${precipNow > 0 ? `raining at ${precipNow}mm` : 'dry'}, with a ${rainProb}% daily rain chance.`);
+                } else {
+                  reports.push(`${req.label}: ${rainProb}% chance of rain with ${cond}.`);
+                }
               } else {
-                speak(`No rain right now, but today has a ${todayPrecipChance}% maximum chance of rain.`);
+                if (req.offset === 0) {
+                  const currentTemp = Math.round(data.current.temperature_2m);
+                  reports.push(`Today: currently ${currentTemp}°F with ${cond}, peaking at ${maxT}°F.`);
+                } else {
+                  reports.push(`${req.label}: high of ${maxT}°F, low of ${minT}°F with ${cond}.`);
+                }
               }
             }
-            return;
-          }
+          });
 
-          // Weather requested for both times
-          if (wantsToday && wantsTomorrow) {
-            speak(`Today it is currently ${currentTemp}°F with ${currentCondition}, reaching a high of ${todayMax}°F. Tomorrow expect ${tomorrowCondition} with a high of ${tomorrowMax}°F and a low of ${tomorrowMin}°F.`);
-            return;
+          if (reports.length > 0) {
+            speak(reports.join(" "));
+          } else {
+            speak("I couldn't locate that specific date in the weather timeline.");
           }
-
-          // Weather requested just for tomorrow
-          if (wantsTomorrow) {
-            speak(`Tomorrow will feature ${tomorrowCondition} with a high of ${tomorrowMax}°F and a low of ${tomorrowMin}°F.`);
-            return;
-          }
-
-          // Default single time (current / today)
-          speak(`It is currently ${currentTemp} degrees Fahrenheit with ${currentCondition}, and a high of ${todayMax} degrees expected today.`);
         } catch (err) {
-          speak("Sorry, I couldn't reach the forecast records.");
+          speak("Sorry, I couldn't reach the weather archive.");
         }
         return;
       }
