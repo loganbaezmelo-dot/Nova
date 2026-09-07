@@ -55,7 +55,7 @@
 <body>
 
   <div class="orb" id="mic-btn" title="Click to speak"></div>
-  <div id="status">Tap the orb and say something like "Is it raining?" or "Tell me a joke"</div>
+  <div id="status">Tap the orb and say something like "What's the weather?" or "Is it raining?"</div>
   <div id="response"></div>
 
   <script>
@@ -113,9 +113,34 @@
       responseText.innerText = text;
     }
 
+    function getWeatherDescription(code) {
+      const descriptions = {
+        0: "clear skies",
+        1: "mainly clear skies",
+        2: "partly cloudy skies",
+        3: "overcast skies",
+        45: "foggy conditions",
+        48: "depositing rime fog",
+        51: "light drizzle",
+        53: "moderate drizzle",
+        55: "dense drizzle",
+        61: "slight rain",
+        63: "moderate rain",
+        65: "heavy rain",
+        71: "slight snow fall",
+        73: "moderate snow fall",
+        75: "heavy snow fall",
+        80: "slight rain showers",
+        81: "moderate rain showers",
+        82: "violent rain showers",
+        95: "a thunderstorm"
+      };
+      return descriptions[code] || "fair conditions";
+    }
+
     async function handleIntent(text) {
-      // 1. Weather & Rain (Open-Meteo API)
-      if (text.includes('rain') || text.includes('weather')) {
+      // 1. Weather & Rain Intent
+      if (text.includes('weather') || text.includes('temperature') || text.includes('rain')) {
         speak("Checking current skies...");
         try {
           const lat = 28.5383;
@@ -125,21 +150,23 @@
           
           const temp = Math.round(data.current.temperature_2m);
           const precip = data.current.precipitation;
+          const code = data.current.weather_code;
+          const condition = getWeatherDescription(code);
           const prob = (data.hourly && data.hourly.precipitation_probability) ? data.hourly.precipitation_probability[0] : 0;
 
           if (text.includes('rain')) {
-            if (precip > 0) {
-              speak(`Yes, it is actively raining right now with ${precip} millimeters of precipitation.`);
-            } else if (prob > 40) {
-              speak(`It's not raining right now, but there is a ${prob}% chance of rain soon.`);
+            if (precip > 0 || (code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
+              speak(`Yes, it is currently raining with ${precip} millimeters of precipitation.`);
+            } else if (prob > 30) {
+              speak(`It's not raining right now, but there is a ${prob}% chance of rain in the forecast.`);
             } else {
-              speak("Nope, it is completely dry outside right now.");
+              speak("Nope, it is completely dry right now.");
             }
           } else {
-            speak(`It is currently ${temp} degrees Fahrenheit.`);
+            speak(`It is currently ${temp} degrees Fahrenheit with ${condition}.`);
           }
         } catch (err) {
-          speak("Sorry, I could not pull the weather report.");
+          speak("Sorry, I couldn't reach the weather service.");
         }
         return;
       }
