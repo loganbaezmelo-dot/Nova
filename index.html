@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nova Assistant</title>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      text-align: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .orb {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #ec4899, #8b5cf6, #3b82f6);
+      box-shadow: 0 0 35px rgba(139, 92, 246, 0.6);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .orb.listening {
+      transform: scale(1.15);
+      box-shadow: 0 0 60px rgba(236, 72, 153, 0.9);
+      animation: pulse 1.5s infinite alternate;
+    }
+    @keyframes pulse {
+      from { transform: scale(1.1); }
+      to { transform: scale(1.22); }
+    }
+    #status {
+      margin-top: 25px;
+      font-size: 1.1rem;
+      color: #9ca3af;
+      max-width: 500px;
+    }
+    #response {
+      margin-top: 15px;
+      font-size: 1.3rem;
+      font-weight: 500;
+      color: #e0e7ff;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="orb" id="mic-btn" title="Click to speak"></div>
+  <div id="status">Tap the orb and say something like "Is it raining?" or "Tell me a joke"</div>
+  <div id="response"></div>
+
+  <script>
+    const orb = document.getElementById('mic-btn');
+    const statusText = document.getElementById('status');
+    const responseText = document.getElementById('response');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        orb.classList.add('listening');
+        statusText.innerText = "Nova is listening...";
+        responseText.innerText = "";
+      };
+
+      recognition.onend = () => {
+        orb.classList.remove('listening');
+      };
+
+      recognition.onerror = (e) => {
+        orb.classList.remove('listening');
+        statusText.innerText = `Error: ${e.error}`;
+      };
+
+      recognition.onresult = async (event) => {
+        const query = event.results[0][0].transcript.toLowerCase();
+        statusText.innerText = `"${query}"`;
+        await handleIntent(query);
+      };
+    } else {
+      statusText.innerText = "Web Speech API not supported in this browser 😭. Try Chrome or Edge.";
+    }
+
+    orb.addEventListener('click', () => {
+      if (!recognition) return;
+      try {
+        recognition.start();
+      } catch (err) {
+        recognition.stop();
+      }
+    });
+
+    function speak(text) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+      responseText.innerText = text;
+    }
+
+    async function handleIntent(text) {
+      // 1. Weather & Rain (Open-Meteo API, free & no auth)
+      if (text.includes('rain') || text.includes('weather')) {
+        speak("Checking current skies...");
+        try {
+          const lat = 28.5383;
+          const lon = -81.3792;
+          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&hourly=precipitation_probability&temperature_unit=fahrenheit`);
+          const data = await res.json();
+          
+          const temp = Math.round(data.current.temperature_2m);
+          const precip = data.current.precipitation;
+          const willRain = precip > 0 || (data.hourly && data.hourly.precipitation_probability[0] > 40);
+
+          if (text.includes('rain')) {
+            speak(willRain ? `Yes, rain is expected or occurring. Precipitation is ${precip} millimeters.` : "Nope, no rain on the radar right now.");
+          } else {
+            speak(`It is currently ${temp} degrees Fahrenheit.`);
+          }
+        } catch (err) {
+          speak("Sorry, I could not pull the weather report.");
+        }
+        return;
+      }
+
+      // 2. Current Time
+      if (text.includes('time')) {
+        const now = new Date();
+        speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
+        return;
+      }
+
+      // 3. Current Date
+      if (text.includes('date') || text.includes('day is it')) {
+        const now = new Date();
+        speak(`Today is ${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.`);
+        return;
+      }
+
+      // 4. Random Joke
+      if (text.includes('joke')) {
+        try {
+          const res = await fetch('https://official-joke-api.appspot.com/random_joke');
+          const data = await res.json();
+          speak(`${data.setup} ... ${data.punchline}`);
+        } catch (err) {
+          speak("Why did the network cross the road? To reach the other domain.");
+        }
+        return;
+      }
+
+      // 5. Random Advice
+      if (text.includes('advice') || text.includes('quote')) {
+        try {
+          const res = await fetch('https://api.adviceslip.com/advice');
+          const data = await res.json();
+          speak(data.slip.advice);
+        } catch (err) {
+          speak("Always backup your code before deploying.");
+        }
+        return;
+      }
+
+      // 6. Coin Toss
+      if (text.includes('flip a coin') || text.includes('coin toss')) {
+        const flip = Math.random() > 0.5 ? "Heads" : "Tails";
+        speak(`It landed on ${flip}.`);
+        return;
+      }
+
+      // 7. Identity check
+      if (text.includes('who are you') || text.includes('your name')) {
+        speak("I am Nova, your local browser assistant. Zero cloud subscriptions required 💀.");
+        return;
+      }
+
+      // Fallback
+      speak("Nova doesn't have an API or handler for that command yet 💀.");
+    }
+  </script>
+</body>
+</html>
