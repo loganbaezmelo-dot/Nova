@@ -271,7 +271,13 @@
     async function handleIntent(text) {
       const clean = text.replace(/[?.,!]/g, '').trim();
 
-      // 1. Casual Greetings & Acknowledgments
+      // 1. Help & Capabilities Intent
+      if (/^(what can you do|help|what are your features|commands|what do you do)\b/i.test(clean)) {
+        speak("I can check live weather and rain, tell you the time and date, drop jokes and advice, flip coins, or look up anything on Wikipedia 💀.");
+        return;
+      }
+
+      // 2. Casual Greetings & Acknowledgments
       if (/^(hey|hi|hello|what'?s up|yo|greetings|howdy|sup)\b/i.test(clean)) {
         const greetings = [
           "Hey! What's up?",
@@ -284,7 +290,7 @@
         return;
       }
 
-      // 2. Weather & Rain Intent
+      // 3. Weather & Rain Intent
       if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain')) {
         speak("Checking current skies...");
         try {
@@ -316,21 +322,21 @@
         return;
       }
 
-      // 3. Current Time
+      // 4. Current Time
       if (clean.includes('what time is it') || clean === 'time') {
         const now = new Date();
         speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
         return;
       }
 
-      // 4. Current Date
+      // 5. Current Date
       if (clean.includes('what is the date') || clean.includes('what day is it') || clean === 'date') {
         const now = new Date();
         speak(`Today is ${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.`);
         return;
       }
 
-      // 5. Random Joke
+      // 6. Random Joke
       if (clean.includes('joke')) {
         try {
           const res = await fetch('https://official-joke-api.appspot.com/random_joke');
@@ -342,7 +348,7 @@
         return;
       }
 
-      // 6. Random Advice
+      // 7. Random Advice
       if (clean.includes('give me advice') || clean.includes('quote') || clean === 'advice') {
         try {
           const res = await fetch('https://api.adviceslip.com/advice');
@@ -354,14 +360,14 @@
         return;
       }
 
-      // 7. Coin Toss
+      // 8. Coin Toss
       if (clean.includes('flip a coin') || clean.includes('coin toss')) {
         const flip = Math.random() > 0.5 ? "Heads" : "Tails";
         speak(`It landed on ${flip}.`);
         return;
       }
 
-      // 8. Identity check
+      // 9. Identity check
       if (clean.includes('who are you') || clean.includes('what is your name')) {
         speak("I am Nova, your client-side assistant. Zero cloud fees, zero Apple lawsuits 💀.");
         return;
