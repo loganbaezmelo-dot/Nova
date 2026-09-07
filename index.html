@@ -57,12 +57,14 @@
       pointer-events: none;
     }
 
+    /* Listening state: faster whirl & pulse */
     .orb.listening {
       animation: rotateGradient 2s linear infinite, pulseGlow 1.2s ease-in-out infinite alternate;
       box-shadow: 0 0 70px rgba(236, 72, 153, 0.85);
       filter: contrast(1.15) brightness(1.1);
     }
 
+    /* Speaking state: rapid morphing glow */
     .orb.speaking {
       animation: rotateGradient 1.5s linear infinite, speakMorph 0.8s ease-in-out infinite alternate;
       box-shadow: 0 0 75px rgba(59, 130, 246, 0.9);
@@ -235,7 +237,10 @@
 
     function parseRequestedDateOffsets(text) {
       const offsets = [];
+      const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const todayDay = new Date().getDay();
 
+      // 1. Matches: "X days ago"
       const pastRegex = /(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?\s+ago/gi;
       let match;
       while ((match = pastRegex.exec(text)) !== null) {
@@ -243,20 +248,47 @@
         if (!isNaN(num)) offsets.push({ offset: -num, label: `${num} days ago` });
       }
 
+      // 2. Matches: "yesterday"
       if (/\byesterday\b/i.test(text) && !offsets.some(o => o.offset === -1)) {
         offsets.push({ offset: -1, label: "yesterday" });
       }
 
+      // 3. Matches: "in X days"
       const futureRegex = /in\s+(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?/gi;
       while ((match = futureRegex.exec(text)) !== null) {
         const num = textToNumber(match[1]);
         if (!isNaN(num)) offsets.push({ offset: num, label: `in ${num} days` });
       }
 
+      // 4. Matches: "tomorrow"
       if (/\btomorrow\b/i.test(text) && !offsets.some(o => o.offset === 1)) {
         offsets.push({ offset: 1, label: "tomorrow" });
       }
 
+      // 5. Matches: "last [day of week]" or "this [day of week]"
+      weekdays.forEach((dayName, targetDayIndex) => {
+        // "last friday"
+        const lastRegex = new RegExp(`\\blast\\s+${dayName}\\b`, 'i');
+        if (lastRegex.test(text)) {
+          let diff = targetDayIndex - todayDay;
+          if (diff >= 0) diff -= 7;
+          if (!offsets.some(o => o.offset === diff)) {
+            offsets.push({ offset: diff, label: `last ${dayName}` });
+          }
+        }
+
+        // "next [weekday]"
+        const nextRegex = new RegExp(`\\bnext\\s+${dayName}\\b`, 'i');
+        if (nextRegex.test(text)) {
+          let diff = targetDayIndex - todayDay;
+          if (diff <= 0) diff += 7;
+          if (!offsets.some(o => o.offset === diff)) {
+            offsets.push({ offset: diff, label: `next ${dayName}` });
+          }
+        }
+      });
+
+      // 6. Matches: "today" or standalone check
       if (/\btoday\b/i.test(text) || /\bnow\b/i.test(text) || offsets.length === 0) {
         if (!offsets.some(o => o.offset === 0)) {
           offsets.push({ offset: 0, label: "today" });
@@ -305,7 +337,7 @@
 
       // 1. Capabilities
       if (/^(what can you do|help|what are your features|commands|what do you do)\b/i.test(clean)) {
-        speak("I can check current, past, and upcoming weather, tell you the time and date, share jokes and advice, or look up information on Wikipedia 💀.");
+        speak("I can check current, past, and upcoming weather records, tell you the time and date, share jokes and advice, or look up information on Wikipedia 💀.");
         return;
       }
 
@@ -322,9 +354,9 @@
         return;
       }
 
-      // 3. Conversational Weather & History Intent
+      // 3. Multi-Day & Weekday Weather Intent
       if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain') || clean.includes('forecast')) {
-        speak("Checking that for you...");
+        speak("Checking those dates for you...");
         try {
           const lat = 28.5383;
           const lon = -81.3792;
@@ -347,13 +379,11 @@
               const rainSum = data.daily.precipitation_sum[index];
               const rainProb = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[index] : 0;
 
-              // Connective transition for multiple days
               let prefix = "";
               if (i > 0) {
                 prefix = i === targetOffsets.length - 1 ? "And " : "Also, ";
               }
 
-              // Rain-specific natural phrasing
               if (clean.includes('rain')) {
                 if (req.offset < 0) {
                   reports.push(`${prefix}${req.label} saw around ${rainSum} millimeters of rain.`);
@@ -362,21 +392,19 @@
                   if (precipNow > 0) {
                     reports.push(`${prefix}it's currently raining with ${precipNow} millimeters of precipitation.`);
                   } else {
-                    reports.push(`${prefix}it's not raining right now, but there's a ${rainProb}% chance throughout today.`);
+                    reports.push(`${prefix}it's dry right now, with a ${rainProb}% chance of rain today.`);
                   }
                 } else {
-                  reports.push(`${prefix}${req.label} there's a ${rainProb}% chance of rain with ${cond}.`);
+                  reports.push(`${prefix}${req.label} there is a ${rainProb}% chance of rain with ${cond}.`);
                 }
-              } 
-              // General weather natural phrasing
-              else {
+              } else {
                 if (req.offset === 0) {
                   const currentTemp = Math.round(data.current.temperature_2m);
-                  reports.push(`${prefix}right now it's ${currentTemp} degrees with ${cond}, and you can expect a high of ${maxT} degrees today.`);
+                  reports.push(`${prefix}right now it's ${currentTemp} degrees with ${cond}, reaching a high of ${maxT} degrees today.`);
                 } else if (req.offset < 0) {
                   reports.push(`${prefix}${req.label} it reached a high of ${maxT} degrees and a low of ${minT} degrees with ${cond}.`);
                 } else {
-                  reports.push(`${prefix}${req.label} expect ${cond} with a high near ${maxT} and a low around ${minT} degrees.`);
+                  reports.push(`${prefix}${req.label} expect ${cond} with a high near ${maxT} degrees.`);
                 }
               }
             }
@@ -385,7 +413,7 @@
           if (reports.length > 0) {
             speak(reports.join(" "));
           } else {
-            speak("I couldn't locate records for that date.");
+            speak("I couldn't locate records for those dates.");
           }
         } catch (err) {
           speak("Sorry, I had trouble checking the weather timeline.");
