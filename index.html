@@ -45,17 +45,18 @@
     }
     #response {
       margin-top: 15px;
-      font-size: 1.3rem;
+      font-size: 1.2rem;
       font-weight: 500;
       color: #e0e7ff;
-      max-width: 600px;
+      max-width: 650px;
+      line-height: 1.5;
     }
   </style>
 </head>
 <body>
 
   <div class="orb" id="mic-btn" title="Click to speak"></div>
-  <div id="status">Tap the orb and say something like "What's the weather?" or "Is it raining?"</div>
+  <div id="status">Tap the orb to speak. Ask about weather, jokes, or any topic on Wikipedia.</div>
   <div id="response"></div>
 
   <script>
@@ -138,6 +139,49 @@
       return descriptions[code] || "fair conditions";
     }
 
+    async function searchWikipedia(query) {
+      // Strip out common voice filler words so Wikipedia gets clean search terms
+      const cleanTerm = query
+        .replace(/^(who is|what is|tell me about|define|explain|who was|what was|search for)\s+/i, '')
+        .replace(/[?.,!]/g, '')
+        .trim();
+
+      if (!cleanTerm) {
+        speak("What would you like me to look up on Wikipedia?");
+        return;
+      }
+
+      speak(`Looking up ${cleanTerm} on Wikipedia...`);
+
+      try {
+        // Step 1: Query Wikipedia Search API to get the closest article title
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleanTerm)}&limit=1&namespace=0&format=json&origin=*`;
+        const searchRes = await fetch(searchUrl);
+        const searchData = await searchRes.json();
+
+        const pageTitle = searchData[1] && searchData[1][0];
+        if (!pageTitle) {
+          speak(`Sorry, I couldn't find anything on Wikipedia for ${cleanTerm} 💀.`);
+          return;
+        }
+
+        // Step 2: Grab the official mobile/voice extract summary
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+        const summaryRes = await fetch(summaryUrl);
+        const summaryData = await summaryRes.json();
+
+        if (summaryData.extract) {
+          // Read the first 2 sentences so the browser doesn't talk for 5 minutes straight
+          const shortSummary = summaryData.extract.split('. ').slice(0, 2).join('. ') + '.';
+          speak(shortSummary);
+        } else {
+          speak(`I found a page for ${pageTitle}, but couldn't load the summary.`);
+        }
+      } catch (err) {
+        speak("I ran into an issue connecting to Wikipedia.");
+      }
+    }
+
     async function handleIntent(text) {
       // 1. Weather & Rain Intent
       if (text.includes('weather') || text.includes('temperature') || text.includes('rain')) {
@@ -172,14 +216,14 @@
       }
 
       // 2. Current Time
-      if (text.includes('time')) {
+      if (text.includes('what time is it') || text === 'time') {
         const now = new Date();
         speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
         return;
       }
 
       // 3. Current Date
-      if (text.includes('date') || text.includes('day is it')) {
+      if (text.includes('what is the date') || text.includes('what day is it')) {
         const now = new Date();
         speak(`Today is ${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.`);
         return;
@@ -198,7 +242,7 @@
       }
 
       // 5. Random Advice
-      if (text.includes('advice') || text.includes('quote')) {
+      if (text.includes('give me advice') || text.includes('quote')) {
         try {
           const res = await fetch('https://api.adviceslip.com/advice');
           const data = await res.json();
@@ -217,13 +261,13 @@
       }
 
       // 7. Identity check
-      if (text.includes('who are you') || text.includes('your name')) {
-        speak("I am Nova, your local browser assistant. Zero cloud subscriptions required 💀.");
+      if (text.includes('who are you') || text.includes('what is your name')) {
+        speak("I am Nova, your client-side assistant. Zero cloud fees, zero Apple lawsuits 💀.");
         return;
       }
 
-      // Fallback
-      speak("Nova doesn't have an API or handler for that command yet 💀.");
+      // Fallback: Query Wikipedia for literally anything else!
+      await searchWikipedia(text);
     }
   </script>
 </body>
