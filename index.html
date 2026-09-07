@@ -57,14 +57,12 @@
       pointer-events: none;
     }
 
-    /* Listening state: faster color whirl & breathing scale */
     .orb.listening {
       animation: rotateGradient 2s linear infinite, pulseGlow 1.2s ease-in-out infinite alternate;
       box-shadow: 0 0 70px rgba(236, 72, 153, 0.85);
       filter: contrast(1.15) brightness(1.1);
     }
 
-    /* Speaking state: rapid morphing glow */
     .orb.speaking {
       animation: rotateGradient 1.5s linear infinite, speakMorph 0.8s ease-in-out infinite alternate;
       box-shadow: 0 0 75px rgba(59, 130, 246, 0.9);
@@ -117,7 +115,7 @@
 <body>
 
   <div class="orb" id="mic-btn" title="Click to speak or cancel"></div>
-  <div id="status">Tap the orb to speak. Ask about past, current, or future weather.</div>
+  <div id="status">Tap the orb to speak. Tap anytime while it's talking to stop it.</div>
   <div id="response"></div>
 
   <script>
@@ -208,29 +206,28 @@
     function getWeatherDescription(code) {
       const descriptions = {
         0: "clear skies",
-        1: "mainly clear skies",
+        1: "mostly clear skies",
         2: "partly cloudy skies",
         3: "overcast skies",
-        45: "foggy conditions",
-        48: "depositing rime fog",
+        45: "foggy weather",
+        48: "rime fog",
         51: "light drizzle",
-        53: "moderate drizzle",
-        55: "dense drizzle",
-        61: "slight rain",
-        63: "moderate rain",
-        65: "heavy rain",
-        71: "slight snow fall",
-        73: "moderate snow fall",
-        75: "heavy snow fall",
-        80: "slight rain showers",
+        53: "drizzle",
+        55: "heavy drizzle",
+        61: "light rain",
+        63: "rain",
+        65: "heavy downpours",
+        71: "light snow",
+        73: "steady snowfall",
+        75: "heavy snow",
+        80: "isolated rain showers",
         81: "moderate rain showers",
-        82: "violent rain showers",
+        82: "heavy rain showers",
         95: "thunderstorms"
       };
       return descriptions[code] || "fair conditions";
     }
 
-    // Converts words ("two", "three") to digits
     function textToNumber(val) {
       const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
       return words[val] || parseInt(val, 10);
@@ -239,7 +236,6 @@
     function parseRequestedDateOffsets(text) {
       const offsets = [];
 
-      // Matches: "3 days ago", "two days ago"
       const pastRegex = /(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?\s+ago/gi;
       let match;
       while ((match = pastRegex.exec(text)) !== null) {
@@ -247,31 +243,26 @@
         if (!isNaN(num)) offsets.push({ offset: -num, label: `${num} days ago` });
       }
 
-      // Yesterday
       if (/\byesterday\b/i.test(text) && !offsets.some(o => o.offset === -1)) {
-        offsets.push({ offset: -1, label: "Yesterday" });
+        offsets.push({ offset: -1, label: "yesterday" });
       }
 
-      // Matches: "in 3 days", "in two days"
       const futureRegex = /in\s+(\b\d+|\bone|\btwo|\bthree|\bfour|\bfive|\bsix|\bseven|\beight|\bnine|\bten)\s+days?/gi;
       while ((match = futureRegex.exec(text)) !== null) {
         const num = textToNumber(match[1]);
         if (!isNaN(num)) offsets.push({ offset: num, label: `in ${num} days` });
       }
 
-      // Tomorrow
       if (/\btomorrow\b/i.test(text) && !offsets.some(o => o.offset === 1)) {
-        offsets.push({ offset: 1, label: "Tomorrow" });
+        offsets.push({ offset: 1, label: "tomorrow" });
       }
 
-      // Today / Right now
       if (/\btoday\b/i.test(text) || /\bnow\b/i.test(text) || offsets.length === 0) {
         if (!offsets.some(o => o.offset === 0)) {
-          offsets.push({ offset: 0, label: "Today" });
+          offsets.push({ offset: 0, label: "today" });
         }
       }
 
-      // Sort chronological: oldest to newest
       return offsets.sort((a, b) => a.offset - b.offset);
     }
 
@@ -303,7 +294,7 @@
           }
         }
 
-        speak(`Sorry, I couldn't find anything on Wikipedia for ${cleanTerm} 💀.`);
+        speak(`I couldn't find anything on Wikipedia for ${cleanTerm} 💀.`);
       } catch (err) {
         speak("I ran into an issue connecting to Wikipedia.");
       }
@@ -314,30 +305,29 @@
 
       // 1. Capabilities
       if (/^(what can you do|help|what are your features|commands|what do you do)\b/i.test(clean)) {
-        speak("I can check live, past, and future weather records, tell time, drop jokes, flip coins, or query Wikipedia 💀.");
+        speak("I can check current, past, and upcoming weather, tell you the time and date, share jokes and advice, or look up information on Wikipedia 💀.");
         return;
       }
 
       // 2. Greetings
       if (/^(hey|hi|hello|what'?s up|yo|greetings|howdy|sup)\b/i.test(clean)) {
         const greetings = [
-          "Hey! What's up?",
-          "Hello! How can I help you today?",
-          "Yo! What are we checking out?",
-          "Hey there! Ready when you are."
+          "Hey! What's going on?",
+          "Hello! How can I help you out?",
+          "Yo! What's on your mind?",
+          "Hey there! Ready whenever you are."
         ];
         const pick = greetings[Math.floor(Math.random() * greetings.length)];
         speak(pick);
         return;
       }
 
-      // 3. Multi-Day & Historical Weather Intent
+      // 3. Conversational Weather & History Intent
       if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain') || clean.includes('forecast')) {
-        speak("Accessing weather timeline records...");
+        speak("Checking that for you...");
         try {
           const lat = 28.5383;
           const lon = -81.3792;
-          // past_days=14 and forecast_days=16 covers past 2 weeks up to 16 days in the future
           const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&past_days=14&forecast_days=16&temperature_unit=fahrenheit&timezone=auto`;
           
           const res = await fetch(url);
@@ -345,35 +335,48 @@
 
           const targetOffsets = parseRequestedDateOffsets(clean);
           const timeArray = data.daily.time;
-          
-          // Index of today in the timeline array is exactly past_days (14)
           const todayIndex = 14; 
           const reports = [];
 
-          targetOffsets.forEach(req => {
+          targetOffsets.forEach((req, i) => {
             const index = todayIndex + req.offset;
             if (index >= 0 && index < timeArray.length) {
               const maxT = Math.round(data.daily.temperature_2m_max[index]);
               const minT = Math.round(data.daily.temperature_2m_min[index]);
               const cond = getWeatherDescription(data.daily.weather_code[index]);
               const rainSum = data.daily.precipitation_sum[index];
-              const rainProb = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[index] : null;
+              const rainProb = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[index] : 0;
 
+              // Connective transition for multiple days
+              let prefix = "";
+              if (i > 0) {
+                prefix = i === targetOffsets.length - 1 ? "And " : "Also, ";
+              }
+
+              // Rain-specific natural phrasing
               if (clean.includes('rain')) {
                 if (req.offset < 0) {
-                  reports.push(`${req.label}: had ${rainSum} millimeters of precipitation.`);
+                  reports.push(`${prefix}${req.label} saw around ${rainSum} millimeters of rain.`);
                 } else if (req.offset === 0) {
                   const precipNow = data.current.precipitation;
-                  reports.push(`Today: currently ${precipNow > 0 ? `raining at ${precipNow}mm` : 'dry'}, with a ${rainProb}% daily rain chance.`);
+                  if (precipNow > 0) {
+                    reports.push(`${prefix}it's currently raining with ${precipNow} millimeters of precipitation.`);
+                  } else {
+                    reports.push(`${prefix}it's not raining right now, but there's a ${rainProb}% chance throughout today.`);
+                  }
                 } else {
-                  reports.push(`${req.label}: ${rainProb}% chance of rain with ${cond}.`);
+                  reports.push(`${prefix}${req.label} there's a ${rainProb}% chance of rain with ${cond}.`);
                 }
-              } else {
+              } 
+              // General weather natural phrasing
+              else {
                 if (req.offset === 0) {
                   const currentTemp = Math.round(data.current.temperature_2m);
-                  reports.push(`Today: currently ${currentTemp}°F with ${cond}, peaking at ${maxT}°F.`);
+                  reports.push(`${prefix}right now it's ${currentTemp} degrees with ${cond}, and you can expect a high of ${maxT} degrees today.`);
+                } else if (req.offset < 0) {
+                  reports.push(`${prefix}${req.label} it reached a high of ${maxT} degrees and a low of ${minT} degrees with ${cond}.`);
                 } else {
-                  reports.push(`${req.label}: high of ${maxT}°F, low of ${minT}°F with ${cond}.`);
+                  reports.push(`${prefix}${req.label} expect ${cond} with a high near ${maxT} and a low around ${minT} degrees.`);
                 }
               }
             }
@@ -382,10 +385,10 @@
           if (reports.length > 0) {
             speak(reports.join(" "));
           } else {
-            speak("I couldn't locate that specific date in the weather timeline.");
+            speak("I couldn't locate records for that date.");
           }
         } catch (err) {
-          speak("Sorry, I couldn't reach the weather archive.");
+          speak("Sorry, I had trouble checking the weather timeline.");
         }
         return;
       }
@@ -393,7 +396,7 @@
       // 4. Time
       if (clean.includes('what time is it') || clean === 'time') {
         const now = new Date();
-        speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
+        speak(`It's currently ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
         return;
       }
 
