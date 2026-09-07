@@ -5,8 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nova Assistant</title>
   <style>
+    @property --gradient-angle {
+      syntax: "<angle>";
+      initial-value: 0deg;
+      inherits: false;
+    }
+
     body {
-      background-color: #0b0f19;
+      background-color: #080c16;
       color: #f3f4f6;
       font-family: system-ui, -apple-system, sans-serif;
       display: flex;
@@ -18,37 +24,89 @@
       text-align: center;
       padding: 20px;
       box-sizing: border-box;
+      overflow-x: hidden;
     }
+
     .orb {
-      width: 140px;
-      height: 140px;
+      width: 150px;
+      height: 150px;
       border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, #ec4899, #8b5cf6, #3b82f6);
-      box-shadow: 0 0 35px rgba(139, 92, 246, 0.6);
       cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      background: conic-gradient(
+        from var(--gradient-angle),
+        #ec4899,
+        #8b5cf6,
+        #3b82f6,
+        #06b6d4,
+        #10b981,
+        #ec4899
+      );
+      box-shadow: 0 0 45px rgba(139, 92, 246, 0.45);
+      animation: rotateGradient 6s linear infinite;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+      filter: blur(0.5px);
     }
+
+    .orb::after {
+      content: "";
+      position: absolute;
+      inset: 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.35), transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Listening state: faster color whirl & breathing scale */
     .orb.listening {
-      transform: scale(1.15);
-      box-shadow: 0 0 60px rgba(236, 72, 153, 0.9);
-      animation: pulse 1.5s infinite alternate;
+      animation: rotateGradient 2s linear infinite, pulseGlow 1.2s ease-in-out infinite alternate;
+      box-shadow: 0 0 70px rgba(236, 72, 153, 0.85);
+      filter: contrast(1.15) brightness(1.1);
     }
+
+    /* Speaking state: rapid morphing glow */
     .orb.speaking {
-      box-shadow: 0 0 50px rgba(59, 130, 246, 0.8);
+      animation: rotateGradient 1.5s linear infinite, speakMorph 0.8s ease-in-out infinite alternate;
+      box-shadow: 0 0 75px rgba(59, 130, 246, 0.9);
+      filter: contrast(1.2) brightness(1.15);
     }
-    @keyframes pulse {
-      from { transform: scale(1.1); }
-      to { transform: scale(1.22); }
+
+    @keyframes rotateGradient {
+      to {
+        --gradient-angle: 360deg;
+      }
     }
+
+    @keyframes pulseGlow {
+      from {
+        transform: scale(1.08);
+      }
+      to {
+        transform: scale(1.24);
+      }
+    }
+
+    @keyframes speakMorph {
+      0% {
+        transform: scale(1.05) rotate(0deg);
+        border-radius: 50% 45% 55% 50%;
+      }
+      100% {
+        transform: scale(1.18) rotate(5deg);
+        border-radius: 48% 54% 46% 52%;
+      }
+    }
+
     #status {
-      margin-top: 25px;
-      font-size: 1.1rem;
+      margin-top: 35px;
+      font-size: 1.05rem;
       color: #9ca3af;
-      max-width: 500px;
+      max-width: 520px;
     }
+
     #response {
       margin-top: 15px;
-      font-size: 1.2rem;
+      font-size: 1.25rem;
       font-weight: 500;
       color: #e0e7ff;
       max-width: 650px;
@@ -103,9 +161,9 @@
       statusText.innerText = "Web Speech API not supported in this browser 😭. Try Chrome or Edge.";
     }
 
-    // Orb Click Handler: Stops speech if talking, cancels recognition if listening, or starts listening
+    // Orb Click Handler
     orb.addEventListener('click', () => {
-      // 1. If it is talking, shut it down immediately
+      // 1. If talking, cancel speech immediately
       if (window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
         orb.classList.remove('speaking');
@@ -113,13 +171,13 @@
         return;
       }
 
-      // 2. If it is already listening, stop listening
+      // 2. If listening, toggle off
       if (isListening && recognition) {
         recognition.stop();
         return;
       }
 
-      // 3. Otherwise, begin listening
+      // 3. Otherwise, listen
       if (recognition) {
         try {
           recognition.start();
@@ -130,7 +188,7 @@
     });
 
     function speak(text) {
-      window.speechSynthesis.cancel(); // Clear any previous queued speech
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
@@ -294,7 +352,7 @@
         return;
       }
 
-      // Fallback: Query Wikipedia for literally anything else!
+      // Fallback: Query Wikipedia
       await searchWikipedia(text);
     }
   </script>
