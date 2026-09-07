@@ -140,43 +140,36 @@
     }
 
     async function searchWikipedia(query) {
-      // Strip out common voice filler words so Wikipedia gets clean search terms
-      const cleanTerm = query
-        .replace(/^(who is|what is|tell me about|define|explain|who was|what was|search for)\s+/i, '')
+      // Strip out question prefixes, contractions, and articles like "a/an/the"
+      let cleanTerm = query
+        .replace(/^(what'?s|what is|who'?s|who was|who is|tell me about|explain|define|search for)\s+(a\s+|an\s+|the\s+)?/i, '')
         .replace(/[?.,!]/g, '')
         .trim();
 
       if (!cleanTerm) {
-        speak("What would you like me to look up on Wikipedia?");
+        speak("What would you like me to look up?");
         return;
       }
 
-      speak(`Looking up ${cleanTerm} on Wikipedia...`);
+      speak(`Looking up ${cleanTerm}...`);
 
       try {
-        // Step 1: Query Wikipedia Search API to get the closest article title
-        const searchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleanTerm)}&limit=1&namespace=0&format=json&origin=*`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json();
+        // Step 1: Use Wikipedia search engine (generator=search) instead of opensearch for much better matching
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(cleanTerm)}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exsentences=2&format=json&origin=*`;
+        const res = await fetch(searchUrl);
+        const data = await res.json();
 
-        const pageTitle = searchData[1] && searchData[1][0];
-        if (!pageTitle) {
-          speak(`Sorry, I couldn't find anything on Wikipedia for ${cleanTerm} 💀.`);
-          return;
+        if (data.query && data.query.pages) {
+          const pages = Object.values(data.query.pages);
+          const firstResult = pages[0];
+
+          if (firstResult && firstResult.extract) {
+            speak(firstResult.extract);
+            return;
+          }
         }
 
-        // Step 2: Grab the official mobile/voice extract summary
-        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
-        const summaryRes = await fetch(summaryUrl);
-        const summaryData = await summaryRes.json();
-
-        if (summaryData.extract) {
-          // Read the first 2 sentences so the browser doesn't talk for 5 minutes straight
-          const shortSummary = summaryData.extract.split('. ').slice(0, 2).join('. ') + '.';
-          speak(shortSummary);
-        } else {
-          speak(`I found a page for ${pageTitle}, but couldn't load the summary.`);
-        }
+        speak(`Sorry, I couldn't find anything on Wikipedia for ${cleanTerm} 💀.`);
       } catch (err) {
         speak("I ran into an issue connecting to Wikipedia.");
       }
