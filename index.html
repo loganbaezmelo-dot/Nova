@@ -57,14 +57,12 @@
       pointer-events: none;
     }
 
-    /* Listening state: faster color whirl & breathing scale */
     .orb.listening {
       animation: rotateGradient 2s linear infinite, pulseGlow 1.2s ease-in-out infinite alternate;
       box-shadow: 0 0 70px rgba(236, 72, 153, 0.85);
       filter: contrast(1.15) brightness(1.1);
     }
 
-    /* Speaking state: rapid morphing glow */
     .orb.speaking {
       animation: rotateGradient 1.5s linear infinite, speakMorph 0.8s ease-in-out infinite alternate;
       box-shadow: 0 0 75px rgba(59, 130, 246, 0.9);
@@ -161,9 +159,7 @@
       statusText.innerText = "Web Speech API not supported in this browser 😭. Try Chrome or Edge.";
     }
 
-    // Orb Click Handler
     orb.addEventListener('click', () => {
-      // 1. If talking, cancel speech immediately
       if (window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
         orb.classList.remove('speaking');
@@ -171,13 +167,11 @@
         return;
       }
 
-      // 2. If listening, toggle off
       if (isListening && recognition) {
         recognition.stop();
         return;
       }
 
-      // 3. Otherwise, listen
       if (recognition) {
         try {
           recognition.start();
@@ -229,7 +223,7 @@
         80: "slight rain showers",
         81: "moderate rain showers",
         82: "violent rain showers",
-        95: "a thunderstorm"
+        95: "thunderstorms"
       };
       return descriptions[code] || "fair conditions";
     }
@@ -271,13 +265,13 @@
     async function handleIntent(text) {
       const clean = text.replace(/[?.,!]/g, '').trim();
 
-      // 1. Help & Capabilities Intent
+      // 1. Capabilities
       if (/^(what can you do|help|what are your features|commands|what do you do)\b/i.test(clean)) {
-        speak("I can check live weather and rain, tell you the time and date, drop jokes and advice, flip coins, or look up anything on Wikipedia 💀.");
+        speak("I can check live and upcoming weather, tell you the time and date, drop jokes, flip coins, or look up anything on Wikipedia 💀.");
         return;
       }
 
-      // 2. Casual Greetings & Acknowledgments
+      // 2. Greetings
       if (/^(hey|hi|hello|what'?s up|yo|greetings|howdy|sup)\b/i.test(clean)) {
         const greetings = [
           "Hey! What's up?",
@@ -290,53 +284,85 @@
         return;
       }
 
-      // 3. Weather & Rain Intent
-      if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain')) {
-        speak("Checking current skies...");
+      // 3. Smart Multi-Time Weather & Rain Intent
+      if (clean.includes('weather') || clean.includes('temperature') || clean.includes('rain') || clean.includes('forecast')) {
+        speak("Checking forecast records...");
         try {
           const lat = 28.5383;
           const lon = -81.3792;
-          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&hourly=precipitation_probability&temperature_unit=fahrenheit`);
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&hourly=precipitation_probability&temperature_unit=fahrenheit&timezone=auto`;
+          const res = await fetch(url);
           const data = await res.json();
-          
-          const temp = Math.round(data.current.temperature_2m);
-          const precip = data.current.precipitation;
-          const code = data.current.weather_code;
-          const condition = getWeatherDescription(code);
-          const prob = (data.hourly && data.hourly.precipitation_probability) ? data.hourly.precipitation_probability[0] : 0;
 
+          const wantsTomorrow = clean.includes('tomorrow');
+          const wantsToday = clean.includes('today') || (!wantsTomorrow);
+
+          // Today details
+          const currentTemp = Math.round(data.current.temperature_2m);
+          const currentCondition = getWeatherDescription(data.current.weather_code);
+          const todayMax = Math.round(data.daily.temperature_2m_max[0]);
+          const todayMin = Math.round(data.daily.temperature_2m_min[0]);
+          const todayPrecipChance = data.daily.precipitation_probability_max[0];
+          const todayCondition = getWeatherDescription(data.daily.weather_code[0]);
+
+          // Tomorrow details
+          const tomorrowMax = Math.round(data.daily.temperature_2m_max[1]);
+          const tomorrowMin = Math.round(data.daily.temperature_2m_min[1]);
+          const tomorrowCondition = getWeatherDescription(data.daily.weather_code[1]);
+          const tomorrowPrecipChance = data.daily.precipitation_probability_max[1];
+
+          // If asking specifically about rain
           if (clean.includes('rain')) {
-            if (precip > 0 || (code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
-              speak(`Yes, it is currently raining with ${precip} millimeters of precipitation.`);
-            } else if (prob > 30) {
-              speak(`It's not raining right now, but there is a ${prob}% chance of rain in the forecast.`);
+            if (wantsToday && wantsTomorrow) {
+              speak(`Today has a ${todayPrecipChance}% chance of rain. Tomorrow has a ${tomorrowPrecipChance}% chance of rain.`);
+            } else if (wantsTomorrow) {
+              speak(`Tomorrow will have a ${tomorrowPrecipChance}% chance of rain with ${tomorrowCondition}.`);
             } else {
-              speak("Nope, it is completely dry right now.");
+              const precipNow = data.current.precipitation;
+              if (precipNow > 0) {
+                speak(`It is currently raining at ${precipNow} millimeters.`);
+              } else {
+                speak(`No rain right now, but today has a ${todayPrecipChance}% maximum chance of rain.`);
+              }
             }
-          } else {
-            speak(`It is currently ${temp} degrees Fahrenheit with ${condition}.`);
+            return;
           }
+
+          // Weather requested for both times
+          if (wantsToday && wantsTomorrow) {
+            speak(`Today it is currently ${currentTemp}°F with ${currentCondition}, reaching a high of ${todayMax}°F. Tomorrow expect ${tomorrowCondition} with a high of ${tomorrowMax}°F and a low of ${tomorrowMin}°F.`);
+            return;
+          }
+
+          // Weather requested just for tomorrow
+          if (wantsTomorrow) {
+            speak(`Tomorrow will feature ${tomorrowCondition} with a high of ${tomorrowMax}°F and a low of ${tomorrowMin}°F.`);
+            return;
+          }
+
+          // Default single time (current / today)
+          speak(`It is currently ${currentTemp} degrees Fahrenheit with ${currentCondition}, and a high of ${todayMax} degrees expected today.`);
         } catch (err) {
-          speak("Sorry, I couldn't reach the weather service.");
+          speak("Sorry, I couldn't reach the forecast records.");
         }
         return;
       }
 
-      // 4. Current Time
+      // 4. Time
       if (clean.includes('what time is it') || clean === 'time') {
         const now = new Date();
         speak(`It is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
         return;
       }
 
-      // 5. Current Date
+      // 5. Date
       if (clean.includes('what is the date') || clean.includes('what day is it') || clean === 'date') {
         const now = new Date();
         speak(`Today is ${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}.`);
         return;
       }
 
-      // 6. Random Joke
+      // 6. Joke
       if (clean.includes('joke')) {
         try {
           const res = await fetch('https://official-joke-api.appspot.com/random_joke');
@@ -348,7 +374,7 @@
         return;
       }
 
-      // 7. Random Advice
+      // 7. Advice
       if (clean.includes('give me advice') || clean.includes('quote') || clean === 'advice') {
         try {
           const res = await fetch('https://api.adviceslip.com/advice');
@@ -367,7 +393,7 @@
         return;
       }
 
-      // 9. Identity check
+      // 9. Identity
       if (clean.includes('who are you') || clean.includes('what is your name')) {
         speak("I am Nova, your client-side assistant. Zero cloud fees, zero Apple lawsuits 💀.");
         return;
