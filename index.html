@@ -114,7 +114,7 @@
     }
 
     async function handleIntent(text) {
-      // 1. Weather & Rain (Open-Meteo API, free & no auth)
+      // 1. Weather & Rain (Open-Meteo API)
       if (text.includes('rain') || text.includes('weather')) {
         speak("Checking current skies...");
         try {
@@ -125,10 +125,16 @@
           
           const temp = Math.round(data.current.temperature_2m);
           const precip = data.current.precipitation;
-          const willRain = precip > 0 || (data.hourly && data.hourly.precipitation_probability[0] > 40);
+          const prob = (data.hourly && data.hourly.precipitation_probability) ? data.hourly.precipitation_probability[0] : 0;
 
           if (text.includes('rain')) {
-            speak(willRain ? `Yes, rain is expected or occurring. Precipitation is ${precip} millimeters.` : "Nope, no rain on the radar right now.");
+            if (precip > 0) {
+              speak(`Yes, it is actively raining right now with ${precip} millimeters of precipitation.`);
+            } else if (prob > 40) {
+              speak(`It's not raining right now, but there is a ${prob}% chance of rain soon.`);
+            } else {
+              speak("Nope, it is completely dry outside right now.");
+            }
           } else {
             speak(`It is currently ${temp} degrees Fahrenheit.`);
           }
